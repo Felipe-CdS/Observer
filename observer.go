@@ -1,16 +1,19 @@
 package observer
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 type Observer struct {
 	// Db         *sql.DB
-	Watcher    *fsnotify.Watcher
-	WatchPaths []string
-	Results    []string
+	Watcher       *fsnotify.Watcher
+	WatchPaths    []string
+	Results       []string
+	Notifications chan string
 }
 
 func NewObserver(configPath string) Observer {
@@ -21,9 +24,15 @@ func NewObserver(configPath string) Observer {
 		log.Fatal(err)
 	}
 
+	// These paths come from the config file
+	cwd, _ := os.Getwd()
+
 	o := Observer{
-		Watcher:    w,
-		WatchPaths: []string{"/tmp", "."},
+		Watcher: w,
+		// These paths will come from the config file.
+		// Here just for testing
+		WatchPaths:    []string{"/tmp", fmt.Sprintf("%s/testing_files", cwd)},
+		Notifications: make(chan string),
 	}
 
 	for _, p := range o.WatchPaths {
@@ -38,9 +47,6 @@ func NewObserver(configPath string) Observer {
 }
 
 func (o Observer) Watch() {
-
-	defer o.Watcher.Close()
-
 	go func() {
 		for {
 			select {
@@ -48,12 +54,9 @@ func (o Observer) Watch() {
 				if !ok {
 					return
 				}
-				log.Println("event:", event)
 				if event.Has(fsnotify.Write) {
-					// Parse markdown
-					// Write in database
-					o.Results = append(o.Results, event.Name)
-					log.Println("modified file:", event.Name)
+					log.Println("event:", event)
+					o.Notifications <- event.Name
 				}
 			case err, ok := <-o.Watcher.Errors:
 				if !ok {
@@ -66,7 +69,10 @@ func (o Observer) Watch() {
 }
 
 func (o Observer) CloseWatcher() {
-	o.Watcher.Close()
+	err := o.Watcher.Close()
+	if err != nil {
+		log.Println("error:", err)
+	}
 }
 
 func loadConfigs(configPath string) {
